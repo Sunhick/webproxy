@@ -10,6 +10,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <sstream>
 #include <memory>
 #include <iostream>
 
@@ -48,19 +49,36 @@ namespace diagnostics {
   private:
     std::mutex writer;
     std::map<log_level, modifier> colors;
-    void log(log_level level, std::string msg);
+    void log(log_level level, const std::string& msg);
 
   public:
+    bool enable_debug = false;
+    
     logger();
     ~logger();
 
     static std::shared_ptr<logger> instance;
     static std::shared_ptr<logger> get_logger();
 
-    void info(std::string msg);
-    void debug(std::string msg);
-    void warn(std::string msg);
-    void fatal(std::string msg);
+    void info(const std::string& msg);
+    void debug(const std::string& msg);
+    void warn(const std::string& msg);
+    void fatal(const std::string& msg);
+
+    /* template<typename T, typename... Args> */
+    /*   void expand(std::ostream& ostream, T msg, Args... args); */
+
+    /* template<typename... Args> */
+    /*   void info(Args... args); */
+
+    /* template<typename... Args> */
+    /*   void debug(Args... args); */
+
+    /* template<typename... Args> */
+    /*   void warn(Args... args); */
+
+    /* template<typename... Args> */
+    /*   void fatal(Args... args); */
   };
 }
 
