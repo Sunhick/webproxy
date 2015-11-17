@@ -7,6 +7,7 @@
 #define WEB_PROXY_H
 
 #include "logger.h"
+#include "cache.h"
 
 #include <string>
 #include <map>
@@ -41,9 +42,11 @@ namespace webkit {
   private:
     int sockfd;
     int listenPort = 5555;
+
+    // http cache 
+    Cache http_cache;
+
     std::shared_ptr<logger> log;
-    // lock for maintaining the consistancy on pending requests
-    std::mutex request_lock;
 
     // open the server socket for incoming connections
     int open_socket(int backlog);
@@ -51,6 +54,7 @@ namespace webkit {
     int die(const char *format, ...);
     // Handle client request in separate thread
     void dispatch_request(int new_fd);
+    std::string build_cache_key(std::string host, std::string path);
 
   public:
     explicit web_proxy();

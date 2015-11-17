@@ -179,55 +179,78 @@ void web_proxy::dispatch_request(int clientsockfd)
   int serversockfd, serverfd;
   char request[510];
   char request_type[300];
-  char http_url[300],http_version[10];
+  char http_hostname[300],http_version[10];
 
   memset(request, 0, 500);
   recv(clientsockfd, request, 500, 0);
    
-  sscanf(request,"%s %s %s",request_type,http_url,http_version);
+  sscanf(request,"%s %s %s",request_type,http_hostname,http_version);
       
   if(((strncmp(request_type, "GET", 3)==0))
      &&((strncmp(http_version,"HTTP/1.1",8)==0) || (strncmp(http_version,"HTTP/1.0",8)==0))
-     &&(strncmp(http_url,"http://",7)==0))  {
+     &&(strncmp(http_hostname,"http://",7)==0))  {
 
-    strcpy(request_type,http_url);
+    strcpy(request_type, http_hostname);
     bool port_num_available = false;
    
-    for(unsigned int i = 7; i < strlen(http_url); i++) {
-      if(http_url[i]==':') {
+    for(unsigned int i = 7; i < strlen(http_hostname); i++) {
+      if(http_hostname[i]==':') {
 	port_num_available = true;
 	break;
       }
     }
    
-    char* temp = strtok(http_url, "//");
+    char* path = strtok(http_hostname, "//");
     int port = 80;
 
-    if(!port_num_available) temp = strtok(NULL, "/");
-    else temp = strtok(NULL,":");
+    if(!port_num_available) path = strtok(NULL, "/");
+    else path = strtok(NULL,":");
    
-    sprintf(http_url, "%s", temp);
+    sprintf(http_hostname, "%s", path);
 
     std::stringstream fmt;
-    fmt << "Host : " << http_url;
+    fmt << "Host : " << http_hostname;
     log->debug(fmt.str());
 
-    struct hostent* host = gethostbyname(http_url);
+    struct hostent* host = gethostbyname(http_hostname);
    
     if(port_num_available) {
-      temp=strtok(NULL,"/");
-      port=atoi(temp);
+      path = strtok(NULL,"/");
+      port = atoi(path);
     }
    
     strcat(request_type, "^]");
-    temp = strtok(request_type, "//");
-    temp = strtok(NULL, "/");
+    path = strtok(request_type, "//");
+    path = strtok(NULL, "/");
 
-    if(temp != NULL) temp = strtok(NULL, "^]");
+    if(path != NULL) path = strtok(NULL, "^]");
+
+    if (path == NULL) path = "";
 
     fmt.str("");
-    fmt << "Path: "<< temp << " Port: " << port;
+    fmt << "Path: "<< path << " Port: " << port;
     log->info(fmt.str());
+
+    // look up in the
+    std::string key = build_cache_key(http_hostname, path);
+    fmt.str("");
+    fmt << "KEY:" << key;
+    log->debug(fmt.str());
+
+    CacheEntry* cacheentry = http_cache.checkCache(key);
+    if (cacheentry != NULL) {
+      // cache hit
+      log->fatal("cache hit!");
+      char* response = cacheentry->getCharString();
+      int length = cacheentry->getLength();
+
+      send(clientsockfd, response, length, 0);
+      
+      close(clientsockfd);
+      _exit(0);
+    }
+
+    log->debug("cache miss");
 
     struct sockaddr_in host_addr;
     memset((char*)&host_addr, 0, sizeof(host_addr));
@@ -241,7 +264,7 @@ void web_proxy::dispatch_request(int clientsockfd)
     serversockfd = connect(serverfd, (struct sockaddr*)&host_addr, sizeof(struct sockaddr));
 
     sprintf(request,"Connected to %s  IP - %s\n",
-	    http_url, inet_ntoa(host_addr.sin_addr));
+	    http_hostname, inet_ntoa(host_addr.sin_addr));
 
     if(serversockfd < 0)
       log->fatal("Error in connecting to remote server");
@@ -249,12 +272,12 @@ void web_proxy::dispatch_request(int clientsockfd)
     log->info(request);
     memset(request, 0, sizeof(request));
 
-    if(temp != NULL)
+    if(path != NULL)
       sprintf(request,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n",
-	      temp, http_version, http_url);
+	      path, http_version, http_hostname);
     else
       sprintf(request,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n",
-	      http_version, http_url);
+	      http_version, http_hostname);
 
     int count = send(serverfd, request, strlen(request), 0);
 
@@ -264,25 +287,37 @@ void web_proxy::dispatch_request(int clientsockfd)
       // read the data from server socket and write to the
       // client socket.
       log->info(request);
+      std::stringstream data;
+
       int read = 0;
       do {
 	memset(request, 0, 500);
 	read = recv(serverfd, request, 500, 0);
+	data << std::string(request);
 	if(read > 0)
 	  send(clientsockfd, request, read, 0);
       } while(read > 0);
+
+      auto cacheentry = new CacheEntry(data.str().c_str());
+      http_cache.addToCache(key, cacheentry);
+      int size = http_cache.size();
+      fmt.str("");
+      fmt << "Entry added! Cache size:" << size;
+      log->debug(fmt.str());
     }
 
   } else {
     std::string error = "400 : BAD REQUEST\nONLY HTTP REQUESTS ALLOWED";
+
     auto dump =
-      [request_type, http_url, http_version]() {
+      [request_type, http_hostname, http_version]() {
       std::stringstream dmp;
       dmp << "\nCONNECTION TYPE: " << request_type
-      << " \nHTTP URL: " << http_url
+      << " \nHTTP URL: " << http_hostname
       << "\nHTTP VERSION:" << http_version; 
       return dmp.str();
     };
+
     std::stringstream fmt;
     dump();
     fmt << error << "\nDUMP:" << dump();
@@ -293,4 +328,10 @@ void web_proxy::dispatch_request(int clientsockfd)
   close(serverfd);
   close(clientsockfd);
   _exit(0);
+}
+
+std::string web_proxy::build_cache_key(std::string host, std::string path)
+{
+  //return  "GET " + path + " HTTP/1.0\n" + "Host: " + host + "\r\n\r\n";
+  return std::string("GET " + path + " HTTP/1.0\n" + "Host: " + host + "\r\n\r\n");
 }

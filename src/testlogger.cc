@@ -31,6 +31,9 @@ int main(int argc, char *argv[])
 {
   std::thread t1(printinfo);
   std::thread t2(printwarn);
-  
+
+  t1.join();
+  t2.join();
+
   return 0;
 }

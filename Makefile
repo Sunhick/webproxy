@@ -14,7 +14,7 @@ IDIR = ./src/include
 WEB_PROXY = webproxy
 
 # Source files for dfs
-WEB_PROXY_SRC = src/logger.cc src/http_request.cc src/webproxy.cc src/main.cc 
+WEB_PROXY_SRC = src/logger.cc src/cache_entry.cc src/cache.cc src/http_request.cc src/webproxy.cc src/main.cc 
 WEB_PROXY_OBJS = $(WEB_PROXY_SRC:.cc=.o)
 
 OBJS = $(WEB_PROXY_OBJS)
