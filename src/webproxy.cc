@@ -84,11 +84,11 @@ bool web_proxy::start(int port)
 
       auto pid = fork();
       if(pid == 0) {
-	// let child thread service the client
-	dispatch_request(newfd);
+      	// let child thread service the client
+      	dispatch_request(newfd, http_cache);
       } else {
-	close(newfd);
-	continue;
+      	close(newfd);
+      	continue;
       }
     }
 
@@ -174,12 +174,18 @@ int web_proxy::die(const char *format, ...)
   exit(EXIT_FAILURE);  
 }
 
-void web_proxy::dispatch_request(int clientsockfd)
+void web_proxy::dispatch_request(int clientsockfd, Cache& http_cache)
 {
   int serversockfd, serverfd;
   char request[510];
   char request_type[300];
   char http_hostname[300],http_version[10];
+
+  int size = http_cache.size();
+  std::stringstream ft;
+  ft.str("");
+  ft << "Cache size:" << size;
+  log->info(ft.str());
 
   memset(request, 0, 500);
   recv(clientsockfd, request, 500, 0);
@@ -225,7 +231,7 @@ void web_proxy::dispatch_request(int clientsockfd)
 
     if(path != NULL) path = strtok(NULL, "^]");
 
-    if (path == NULL) path = "";
+    if (path == NULL) strcpy(path, "");
 
     fmt.str("");
     fmt << "Path: "<< path << " Port: " << port;
@@ -238,7 +244,7 @@ void web_proxy::dispatch_request(int clientsockfd)
     log->debug(fmt.str());
 
     CacheEntry* cacheentry = http_cache.checkCache(key);
-    if (cacheentry != NULL) {
+    if (cacheentry != nullptr) {
       // cache hit
       log->fatal("cache hit!");
       char* response = cacheentry->getCharString();
@@ -298,7 +304,7 @@ void web_proxy::dispatch_request(int clientsockfd)
 	  send(clientsockfd, request, read, 0);
       } while(read > 0);
 
-      auto cacheentry = new CacheEntry(data.str().c_str());
+      CacheEntry* cacheentry = new CacheEntry(data.str().c_str());
       http_cache.addToCache(key, cacheentry);
       int size = http_cache.size();
       fmt.str("");
@@ -333,5 +339,5 @@ void web_proxy::dispatch_request(int clientsockfd)
 std::string web_proxy::build_cache_key(std::string host, std::string path)
 {
   //return  "GET " + path + " HTTP/1.0\n" + "Host: " + host + "\r\n\r\n";
-  return std::string("GET " + path + " HTTP/1.0\n" + "Host: " + host + "\r\n\r\n");
+  return std::string("GET " + path + " HTTP/1.0" + "Host: " + host);
 }

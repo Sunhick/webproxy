@@ -53,7 +53,7 @@ namespace webkit {
     // Print the message and exit the program
     int die(const char *format, ...);
     // Handle client request in separate thread
-    void dispatch_request(int new_fd);
+    void dispatch_request(int new_fd, Cache& http_cache);
     std::string build_cache_key(std::string host, std::string path);
 
   public:

@@ -123,7 +123,7 @@ CacheEntry::CacheEntry(const char * response) {
     cachedResponse[i] = response[i];
   }
   cachedResponse[length] = '\0';
-  replaceHttpProtocol();
+  // replaceHttpProtocol();
   time(&entryTime);
   time(&lastAccessTime);
 }

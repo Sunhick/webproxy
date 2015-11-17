@@ -37,8 +37,8 @@ class Cache{
   }
   ~Cache();
 
-  void add(string key, CacheEntry * value);  
-  CacheEntry * get(string key);
+  void add(string key, CacheEntry* value);  
+  CacheEntry* get(string key);
   unsigned size();
   void lru();
 
