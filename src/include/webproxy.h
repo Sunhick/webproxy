@@ -14,7 +14,7 @@
 #include <mutex>
 #include <vector>
 
-#define BACKLOG 60
+#define BACKLOG 32
 
 using namespace diagnostics;
 
@@ -42,6 +42,8 @@ namespace webkit {
     int sockfd;
     int listenPort = 5555;
     std::shared_ptr<logger> log;
+    // lock for maintaining the consistancy on pending requests
+    std::mutex request_lock;
 
     // open the server socket for incoming connections
     int open_socket(int backlog);
@@ -50,11 +52,6 @@ namespace webkit {
     // Handle client request in separate thread
     void dispatch_request(int new_fd);
 
-    // lock for maintaining the consistancy on pending requests
-    std::mutex request_lock;
-    // list of pending requests
-    std::map<std::thread::id, std::thread&&> pending_requests;
-    void respond(int newfd, char* buffer);
   public:
     explicit web_proxy();
     virtual ~web_proxy();

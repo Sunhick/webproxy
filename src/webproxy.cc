@@ -82,24 +82,17 @@ bool web_proxy::start(int port)
 	continue;
       }
 
-      std::thread *t = new std::thread(&web_proxy::dispatch_request, this, newfd);
-      auto id = t->get_id();
-      auto entry = std::pair<std::thread::id, std::thread&&>(id, std::move(*t));
-
-      std::lock_guard<std::mutex> lock(request_lock);
-      pending_requests.insert(std::move(entry));
-
-      std::stringstream format;
-      format << "Accepted the client! Client Count:" << pending_requests.size();
-      log->info(format.str());
+      auto pid = fork();
+      if(pid == 0) {
+	// let child thread service the client
+	dispatch_request(newfd);
+      } else {
+	close(newfd);
+	continue;
+      }
     }
 
-    log->warn("Exiting web proxy");
-
-    // Make sure all clients are serviced, before server goes down
-    for (auto &thread : pending_requests)
-      thread.second.join();
-    
+    log->warn("Exiting web proxy");    
   } catch (std::exception& e) {
     log->fatal("Error in server(main) thread! Reason: " + std::string(e.what()));
   } catch (...) {
@@ -181,143 +174,123 @@ int web_proxy::die(const char *format, ...)
   exit(EXIT_FAILURE);  
 }
 
-void web_proxy::dispatch_request(int newfd)
+void web_proxy::dispatch_request(int clientsockfd)
 {
-  try {
-    std::stringstream format;
-    format << "Accepted Worker thread(client) socket Id: " << newfd;
-    log->debug(format.str());
-    char buff[4096];
+  int serversockfd, serverfd;
+  char request[510];
+  char request_type[300];
+  char http_url[300],http_version[10];
+
+  memset(request, 0, 500);
+  recv(clientsockfd, request, 500, 0);
+   
+  sscanf(request,"%s %s %s",request_type,http_url,http_version);
       
-    if (read(newfd, buff, 4096) == -1) {
-      log->fatal("Error in reading the request");
-      return;
-    }
+  if(((strncmp(request_type, "GET", 3)==0))
+     &&((strncmp(http_version,"HTTP/1.1",8)==0) || (strncmp(http_version,"HTTP/1.0",8)==0))
+     &&(strncmp(http_url,"http://",7)==0))  {
 
-    format.str("");
-    format << "Raw request:" << std::endl << buff;
-    log->debug(format.str());
-
-    respond(newfd, buff);
-
-    close(newfd);
-
-    // release from the pending_requests
-    auto id = std::this_thread::get_id();
-    if (this->pending_requests.find(id) != this->pending_requests.end()) {
-      std::lock_guard<std::mutex> lock(this->request_lock);
-      // figure out how to delete thread t
-      // std::thread&& t = std::move(this->pending_requests[id]);
-      // delete t;
-      this->pending_requests.erase(id);   
-    }
-
-    format.str("");
-    format << "Closing Worker thread(client) socket Id: " << newfd;
-    log->debug(format.str());
-
-  } catch (std::exception& e) {
-    std::stringstream format;
-    format << "Error occured in client(worker) thread! Reason: " << e.what();
-    log->fatal(format.str());
-  } catch (...) {
-    log->fatal("Error occured in client(worker) thread!");
-  }
-}
-
-void web_proxy::respond(int newfd, char* buffer)
-{
-  struct hostent* host;
-
-  struct sockaddr_in host_addr;
-  int flag=0,newsockfd1,port=0,sockfd1;
-  char t1[300],t2[300],t3[10];
-  char* temp=NULL;
+    strcpy(request_type,http_url);
+    bool port_num_available = false;
    
-  sscanf(buffer,"%s %s %s",t1,t2,t3);
-
-  if(((strncmp(t1,"GET",3)==0))&&((strncmp(t3,"HTTP/1.1",8)==0)||(strncmp(t3,"HTTP/1.0",8)==0))&&(strncmp(t2,"http://",7)==0))
-    {
-      strcpy(t1,t2);
-   
-      flag=0;
-   
-      for(unsigned int i=7;i<strlen(t2);i++)
-	{
-	  if(t2[i]==':')
-	    {
-	      flag=1;
-	      break;
-	    }
-	}
-   
-      temp=strtok(t2,"//");
-      if(flag==0)
-	{
-	  port=80;
-	  temp=strtok(NULL,"/");
-	}
-      else
-	{
-	  temp=strtok(NULL,":");
-	}
-   
-      sprintf(t2,"%s",temp);
-      printf("host = %s",t2);
-      host=gethostbyname(t2);
-   
-      if(flag==1)
-	{
-	  temp=strtok(NULL,"/");
-	  port=atoi(temp);
-	}
-   
-   
-      strcat(t1,"^]");
-      temp=strtok(t1,"//");
-      temp=strtok(NULL,"/");
-      if(temp!=NULL)
-	temp=strtok(NULL,"^]");
-      printf("\npath = %s\nPort = %d\n",temp,port);
-   
-   
-      bzero((char*)&host_addr,sizeof(host_addr));
-      host_addr.sin_port=htons(port);
-      host_addr.sin_family=AF_INET;
-      bcopy((char*)host->h_addr,(char*)&host_addr.sin_addr.s_addr,host->h_length);
-   
-      sockfd1=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
-      newsockfd1=connect(sockfd1,(struct sockaddr*)&host_addr,sizeof(struct sockaddr));
-      sprintf(buffer,"\nConnected to %s  IP - %s\n",t2,inet_ntoa(host_addr.sin_addr));
-      if(newsockfd1<0)
-	log->fatal("Error in connecting to remote server");
-   
-      printf("\n%s\n",buffer);
-      //send(newsockfd,buffer,strlen(buffer),0);
-      bzero((char*)buffer,sizeof(buffer));
-      if(temp!=NULL)
-	sprintf(buffer,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n",temp,t3,t2);
-      else
-	sprintf(buffer,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n",t3,t2);
- 
- 
-      int n = send(sockfd1,buffer,strlen(buffer),0);
-      log->info(std::string(buffer));
-      if(n<0)
-	log->fatal("Error writing to socket");
-      else {
-	do
-	  {
-	    bzero((char*)buffer,500);
-	    n=recv(sockfd1,buffer,500,0);
-	    if(!(n<=0))
-	      send(newfd,buffer,n,0);
-	  } while(n>0);
+    for(unsigned int i = 7; i < strlen(http_url); i++) {
+      if(http_url[i]==':') {
+	port_num_available = true;
+	break;
       }
     }
-  else
-    {
-      send(newfd,"400 : BAD REQUEST\nONLY HTTP REQUESTS ALLOWED",18,0);
+   
+    char* temp = strtok(http_url, "//");
+    int port = 80;
+
+    if(!port_num_available) temp = strtok(NULL, "/");
+    else temp = strtok(NULL,":");
+   
+    sprintf(http_url, "%s", temp);
+
+    std::stringstream fmt;
+    fmt << "Host : " << http_url;
+    log->debug(fmt.str());
+
+    struct hostent* host = gethostbyname(http_url);
+   
+    if(port_num_available) {
+      temp=strtok(NULL,"/");
+      port=atoi(temp);
+    }
+   
+    strcat(request_type, "^]");
+    temp = strtok(request_type, "//");
+    temp = strtok(NULL, "/");
+
+    if(temp != NULL) temp = strtok(NULL, "^]");
+
+    fmt.str("");
+    fmt << "Path: "<< temp << " Port: " << port;
+    log->info(fmt.str());
+
+    struct sockaddr_in host_addr;
+    memset((char*)&host_addr, 0, sizeof(host_addr));
+
+    host_addr.sin_port = htons(port);
+    host_addr.sin_family = AF_INET;
+
+    bcopy((char*)host->h_addr, (char*)&host_addr.sin_addr.s_addr, host->h_length);
+   
+    serverfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    serversockfd = connect(serverfd, (struct sockaddr*)&host_addr, sizeof(struct sockaddr));
+
+    sprintf(request,"Connected to %s  IP - %s\n",
+	    http_url, inet_ntoa(host_addr.sin_addr));
+
+    if(serversockfd < 0)
+      log->fatal("Error in connecting to remote server");
+   
+    log->info(request);
+    memset(request, 0, sizeof(request));
+
+    if(temp != NULL)
+      sprintf(request,"GET /%s %s\r\nHost: %s\r\nConnection: close\r\n\r\n",
+	      temp, http_version, http_url);
+    else
+      sprintf(request,"GET / %s\r\nHost: %s\r\nConnection: close\r\n\r\n",
+	      http_version, http_url);
+
+    int count = send(serverfd, request, strlen(request), 0);
+
+    if(count < 0) {
+      log->fatal("Error writing to socket");
+    } else {
+      // read the data from server socket and write to the
+      // client socket.
+      log->info(request);
+      int read = 0;
+      do {
+	memset(request, 0, 500);
+	read = recv(serverfd, request, 500, 0);
+	if(read > 0)
+	  send(clientsockfd, request, read, 0);
+      } while(read > 0);
     }
 
+  } else {
+    std::string error = "400 : BAD REQUEST\nONLY HTTP REQUESTS ALLOWED";
+    auto dump =
+      [request_type, http_url, http_version]() {
+      std::stringstream dmp;
+      dmp << "\nCONNECTION TYPE: " << request_type
+      << " \nHTTP URL: " << http_url
+      << "\nHTTP VERSION:" << http_version; 
+      return dmp.str();
+    };
+    std::stringstream fmt;
+    dump();
+    fmt << error << "\nDUMP:" << dump();
+    log->warn(fmt.str());
+    send(clientsockfd, error.c_str(), error.size(), 0);
+  }
+
+  close(serverfd);
+  close(clientsockfd);
+  _exit(0);
 }
