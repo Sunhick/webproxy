@@ -231,14 +231,14 @@ void web_proxy::dispatch_request(int clientsockfd, Cache& http_cache)
 
     if(path != NULL) path = strtok(NULL, "^]");
 
-    if (path == NULL) strcpy(path, "");
+    // if (path == NULL) strcpy(path, "");
 
     fmt.str("");
     fmt << "Path: "<< path << " Port: " << port;
     log->info(fmt.str());
 
     // look up in the
-    std::string key = build_cache_key(http_hostname, path);
+    std::string key = build_cache_key(http_hostname, "");
     fmt.str("");
     fmt << "KEY:" << key;
     log->debug(fmt.str());
