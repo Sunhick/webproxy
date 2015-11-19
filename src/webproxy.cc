@@ -202,14 +202,14 @@ void web_proxy::dispatch_request(int clientsockfd)
    
   sscanf(request,"%s %s %s",request_type,http_hostname,http_version);
 
-  // if (strcmp(request_type, "") == 0 ||
-  //     strcmp(http_hostname, "") == 0 ||
-  //     strcmp(http_version, "") == 0) {
-  //   std::string error = "400 : BAD REQUEST\nONLY HTTP REQUESTS ALLOWED";
-  //   send(clientsockfd, error.c_str(), error.size(), 0);
-  //   close(clientsockfd);
-  //   return;
-  // }
+  if (strcmp(request_type, "") == 0 ||
+      strcmp(http_hostname, "") == 0 ||
+      strcmp(http_version, "") == 0) {
+    std::string error = "400 : BAD REQUEST\nONLY HTTP REQUESTS ALLOWED";
+    send(clientsockfd, error.c_str(), error.size(), 0);
+    close(clientsockfd);
+    return;
+  }
 
   if(((strncmp(request_type, "GET", 3) == 0))
      &&((strncmp(http_version,"HTTP/1.1",8) == 0) || (strncmp(http_version,"HTTP/1.0",8) == 0))
@@ -240,7 +240,7 @@ void web_proxy::dispatch_request(int clientsockfd)
 
     struct hostent* host = gethostbyname(http_hostname);
     if (host == NULL) {
-      // close(clientsockfd);
+      close(clientsockfd);
       return;
     }
    
@@ -336,12 +336,14 @@ void web_proxy::dispatch_request(int clientsockfd)
 	  send(clientsockfd, request, read, 0);
       } while(read > 0);
 
-      CacheEntry* cacheentry = new CacheEntry(data.str().c_str());
-      http_cache.addToCache(key, cacheentry);
-      int size = http_cache.size();
-      fmt.str("");
-      fmt << "Entry added! Cache size:" << size;
-      //log->debug(fmt.str()); //////////////////////////
+      if (data.str() != "" && std::string(key) != "") {
+	CacheEntry* cacheentry = new CacheEntry(data.str().c_str());
+	http_cache.addToCache(key, cacheentry);
+	int size = http_cache.size();
+	fmt.str("");
+	fmt << "Entry added! Cache size:" << size;
+	//log->debug(fmt.str()); //////////////////////////
+      }
     }
 
   } else {
