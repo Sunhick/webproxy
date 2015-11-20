@@ -8,7 +8,7 @@
 CC = g++
 DBUG = -g -O0
 LDFLAGS = -pthread
-CCFLAGS = -Wall -std=c++11 $(DBUG) -I $(IDIR)
+CCFLAGS = -Wall -std=c++11 $(DBUG) -I $(IDIR) -Wunused-variable
 
 IDIR = ./src/include
 WEB_PROXY = webproxy
