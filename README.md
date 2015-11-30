@@ -1,9 +1,5 @@
-=====================================================
-
-	Web proxy implementation in C++11
-
-=====================================================
-					Oct 31, 2015
+Web proxy implementation in C++11  [![Build Status](https://api.travis-ci.org/Sunhick/webproxy.svg)](https://travis-ci.org/Sunhick/webproxy)
+Oct 31, 2015
 
 
 Contents:
